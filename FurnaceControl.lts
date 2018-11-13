@@ -1,0 +1,70 @@
+//Furnace states
+const Heating = 0
+const NotHeating = 1
+const Shutdown = 2
+
+//Environment states
+const Low = 0
+const Normal = 1
+const High = 2
+
+range FSetting = Heating..Shutdown			//Furnace settings
+range TSetting = Heating..NotHeating		//Thermostat settings
+range TempSetting = Low..High				//Temperature range
+
+//The Room
+ROOM = E[Normal],
+  E[temp:TempSetting] = 
+	(be[temp] ->
+	 C[temp])
+	,
+  C[temp:TempSetting] = 
+	(// Low temp cases
+	 when (temp==Low) heat -> E[Normal]
+	|when (temp==Low) cool -> E[Low]
+	|when (temp==Low) dontChange -> E[Low]
+	// Normal temp cases
+	|when (temp==Normal) heat -> E[High]
+	|when (temp==Normal) cool -> E[Low]
+	|when (temp==Normal) dontChange -> E[Normal]
+	// High temp cases
+	|when (temp==High) heat -> E[High]
+	|when (temp==High) cool -> E[Normal]
+	|when (temp==High) dontChange -> E[High]
+	).
+
+FURNACE = F[Shutdown],
+  F[s:FSetting] = 
+	// Shutdown case
+	(when (s==Shutdown) powerOn -> F[NotHeating]
+	// NotHeating case
+	|when (s==NotHeating) heatOn -> F[Heating]
+	|when (s==NotHeating) powerOff -> F[Shutdown]
+	// Heating
+	|when (s==Heating) heatOff -> F[NotHeating]
+	|when (s==Heating) heat -> F[Heating]
+	|when (s==Heating) powerOff -> F[Shutdown]
+	).
+
+THERMOSTAT = T[NotHeating],
+  T[s:TSetting] = 
+    (// take the temperature
+	 sense [t:TempSetting] -> 
+	 // control
+		(when (s==NotHeating && t==Low) heatOn -> T[Heating]
+		|when (s==Heating && t==High) heatOff -> T[NotHeating]
+		|when (t==Normal || (s==Heating && t==Low) || (s==NotHeating && t==High)) skip -> T[s]
+		)
+	).
+
+ ||SYSTEM = (FURNACE || THERMOSTAT || ROOM)/{cold/be[Low],normal/be[Normal],hot/be[High],
+											cold/sense[Low],normal/sense[Normal],hot/sense[High]}.
+
+menu RUN = {powerOn,powerOff,cool,dontChange}
+
+fluent BEINGCOLD = <cold, {normal, hot}>
+fluent BEINGNORMAL = <normal, {cold, hot}>
+fluent BEINGHOT = <hot, {cold, normal}>
+
+assert RETURN2NORMAL = [](BEINGCOLD -> <>BEINGNORMAL)
+
